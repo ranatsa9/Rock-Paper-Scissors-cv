@@ -533,6 +533,8 @@ with camera_tab:
 
     if camera_photo is not None:
         camera_rgb = np.array(Image.open(camera_photo).convert("RGB"))
+        if mirror_camera:
+            camera_rgb = cv2.flip(camera_rgb, 1)
         show_still_result(camera_rgb, camera_confidence)
 
 with upload_tab:
