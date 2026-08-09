@@ -10,6 +10,12 @@ better accuracy/speed balance on Apple Silicon.
 Fullscreen mode preserves the complete video frame and keeps game results
 above the browser's video controls.
 
+## Deploy on Streamlit Community Cloud
+
+Connect this GitHub repository at https://share.streamlit.io and select
+`app.py` as the entrypoint. The app includes a STUN configuration for remote
+WebRTC camera connections.
+
 ## Run on macOS
 
 ### Terminal method

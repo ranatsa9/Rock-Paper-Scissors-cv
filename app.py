@@ -499,6 +499,9 @@ with live_tab:
         key="rps-live-camera",
         mode=WebRtcMode.SENDRECV,
         video_frame_callback=video_frame_callback,
+        rtc_configuration={
+            "iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]
+        },
         media_stream_constraints={"video": True, "audio": False},
         video_html_attrs={
             "style": {
@@ -554,4 +557,4 @@ with st.expander("💡 How to get the best detection"):
         "wrong guesses or lower it to reduce missed detections."
     )
 
-st.caption("RPS Vision Arena • YOLO gesture detection • Local camera processing")
+st.caption("RPS Vision Arena • YOLO gesture detection • Real-time camera processing")
