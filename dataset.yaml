@@ -1,0 +1,10 @@
+nc: 3
+names:
+  0: paper
+  1: rock
+  2: scissors
+
+# Training paths used in Colab. Update these when retraining elsewhere.
+train: train/images
+val: valid/images
+test: test/images
