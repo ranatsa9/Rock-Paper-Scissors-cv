@@ -1,5 +1,6 @@
 from pathlib import Path
 from threading import Lock
+import time
 
 import av
 import cv2
@@ -440,8 +441,14 @@ with st.sidebar:
     live_size = st.select_slider(
         "Live quality",
         options=[256, 320, 416],
-        value=416,
+        value=320,
         help="256 is fastest. 416 can be more accurate but slower.",
+    )
+    inference_fps = st.select_slider(
+        "AI checks per second",
+        options=[1, 2, 3, 4],
+        value=2,
+        help="Use 2 on Streamlit Cloud. Higher values consume much more server CPU.",
     )
     mirror_camera = st.toggle(
         "Mirror camera",
@@ -529,6 +536,8 @@ with live_tab:
     motion_state = {
         "previous_gray": None,
         "stable_frames": 0,
+        "last_inference_at": 0.0,
+        "last_result": None,
     }
     motion_state_lock = Lock()
     required_stable_frames = 4
@@ -545,6 +554,7 @@ with live_tab:
                 motion_state["previous_gray"] = current_gray
                 if score > motion_threshold:
                     motion_state["stable_frames"] = 0
+                    motion_state["last_result"] = None
                 else:
                     motion_state["stable_frames"] += 1
                 stable_frames = motion_state["stable_frames"]
@@ -553,16 +563,32 @@ with live_tab:
                 prompted_frame = draw_hold_prompt(image_bgr, stable_frames, required_stable_frames)
                 return av.VideoFrame.from_ndarray(prompted_frame, format="bgr24")
 
-        with MODEL_LOCK:
-            result = model.predict(
-                source=image_bgr,
-                conf=float(live_confidence),
-                imgsz=int(live_size),
-                device=device,
-                max_det=5,
-                iou=0.45,
-                verbose=False,
-            )[0]
+        now = time.monotonic()
+        with motion_state_lock:
+            elapsed = now - motion_state["last_inference_at"]
+            should_infer = motion_state["last_result"] is None or elapsed >= 1.0 / inference_fps
+            cached_result = motion_state["last_result"]
+            if should_infer:
+                motion_state["last_inference_at"] = now
+
+        if should_infer:
+            with MODEL_LOCK:
+                result = model.predict(
+                    source=image_bgr,
+                    conf=float(live_confidence),
+                    imgsz=int(live_size),
+                    device=device,
+                    max_det=5,
+                    iou=0.45,
+                    verbose=False,
+                )[0]
+            with motion_state_lock:
+                motion_state["last_result"] = result
+        elif cached_result is not None:
+            result = cached_result
+        else:
+            return av.VideoFrame.from_ndarray(image_bgr, format="bgr24")
+
         annotated_bgr, detections = draw_detection_overlay(image_bgr, result)
         if battle_mode:
             annotated_bgr = draw_game_hud(annotated_bgr, detections)
