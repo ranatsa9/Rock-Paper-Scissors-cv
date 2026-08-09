@@ -1,6 +1,5 @@
 from pathlib import Path
 from threading import Lock
-import time
 
 import av
 import cv2
@@ -383,51 +382,6 @@ def draw_game_hud(image_bgr, detections):
     cv2.putText(image_bgr, result_text, ((width - result_size[0]) // 2, hud_top + hud_height // 2 + 10), font, result_scale, result_color, 2, cv2.LINE_AA)
     return image_bgr
 
-
-def motion_score(previous_gray, current_bgr):
-    """Estimate whole-frame motion cheaply before running the YOLO model."""
-    small = cv2.resize(current_bgr, (160, 90), interpolation=cv2.INTER_AREA)
-    current_gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
-    current_gray = cv2.GaussianBlur(current_gray, (7, 7), 0)
-    if previous_gray is None:
-        return 255.0, current_gray
-    difference = cv2.absdiff(previous_gray, current_gray)
-    return float(np.mean(difference)), current_gray
-
-
-def draw_hold_prompt(image_bgr, stable_frames, required_frames):
-    """Tell players to hold still while the final gesture is being locked."""
-    output = image_bgr.copy()
-    height, width = output.shape[:2]
-    progress = min(1.0, stable_frames / required_frames)
-    box_width = min(width - 40, 520)
-    box_height = 68
-    left = (width - box_width) // 2
-    top = 24
-
-    overlay = output.copy()
-    cv2.rectangle(overlay, (left, top), (left + box_width, top + box_height), (8, 16, 38), -1)
-    cv2.addWeighted(overlay, 0.88, output, 0.12, 0, output)
-    message = "HOLD YOUR MOVE" if stable_frames == 0 else "LOCKING GESTURE..."
-    font = cv2.FONT_HERSHEY_DUPLEX
-    text_size, _ = cv2.getTextSize(message, font, 0.72, 2)
-    cv2.putText(
-        output,
-        message,
-        ((width - text_size[0]) // 2, top + 31),
-        font,
-        0.72,
-        (255, 255, 255),
-        2,
-        cv2.LINE_AA,
-    )
-    bar_left = left + 22
-    bar_right = left + box_width - 22
-    bar_top = top + 45
-    cv2.rectangle(output, (bar_left, bar_top), (bar_right, bar_top + 8), (48, 58, 87), -1)
-    cv2.rectangle(output, (bar_left, bar_top), (bar_left + int((bar_right - bar_left) * progress), bar_top + 8), (235, 221, 77), -1)
-    return output
-
 with st.sidebar:
     st.title("🎮 Arena controls")
     live_confidence = st.slider(
@@ -441,24 +395,13 @@ with st.sidebar:
     live_size = st.select_slider(
         "Live quality",
         options=[256, 320, 416],
-        value=320,
+        value=416,
         help="256 is fastest. 416 can be more accurate but slower.",
-    )
-    inference_fps = st.select_slider(
-        "AI checks per second",
-        options=[1, 2, 3, 4],
-        value=2,
-        help="Use 2 on Streamlit Cloud. Higher values consume much more server CPU.",
     )
     mirror_camera = st.toggle(
         "Mirror camera",
         value=True,
         help="Makes the camera behave like a mirror and keeps game sides intuitive.",
-    )
-    steady_detection = st.toggle(
-        "Detect only when steady",
-        value=True,
-        help="Pauses detection during movement and reads the gesture after it is held still.",
     )
     battle_mode = st.toggle(
         "Two-player battle mode",
@@ -533,62 +476,20 @@ with live_tab:
             unsafe_allow_html=True,
         )
 
-    motion_state = {
-        "previous_gray": None,
-        "stable_frames": 0,
-        "last_inference_at": 0.0,
-        "last_result": None,
-    }
-    motion_state_lock = Lock()
-    required_stable_frames = 4
-    motion_threshold = 4.2
-
     def video_frame_callback(frame):
         image_bgr = frame.to_ndarray(format="bgr24")
         if mirror_camera:
             image_bgr = cv2.flip(image_bgr, 1)
-
-        if steady_detection:
-            with motion_state_lock:
-                score, current_gray = motion_score(motion_state["previous_gray"], image_bgr)
-                motion_state["previous_gray"] = current_gray
-                if score > motion_threshold:
-                    motion_state["stable_frames"] = 0
-                    motion_state["last_result"] = None
-                else:
-                    motion_state["stable_frames"] += 1
-                stable_frames = motion_state["stable_frames"]
-
-            if stable_frames < required_stable_frames:
-                prompted_frame = draw_hold_prompt(image_bgr, stable_frames, required_stable_frames)
-                return av.VideoFrame.from_ndarray(prompted_frame, format="bgr24")
-
-        now = time.monotonic()
-        with motion_state_lock:
-            elapsed = now - motion_state["last_inference_at"]
-            should_infer = motion_state["last_result"] is None or elapsed >= 1.0 / inference_fps
-            cached_result = motion_state["last_result"]
-            if should_infer:
-                motion_state["last_inference_at"] = now
-
-        if should_infer:
-            with MODEL_LOCK:
-                result = model.predict(
-                    source=image_bgr,
-                    conf=float(live_confidence),
-                    imgsz=int(live_size),
-                    device=device,
-                    max_det=5,
-                    iou=0.45,
-                    verbose=False,
-                )[0]
-            with motion_state_lock:
-                motion_state["last_result"] = result
-        elif cached_result is not None:
-            result = cached_result
-        else:
-            return av.VideoFrame.from_ndarray(image_bgr, format="bgr24")
-
+        with MODEL_LOCK:
+            result = model.predict(
+                source=image_bgr,
+                conf=float(live_confidence),
+                imgsz=int(live_size),
+                device=device,
+                max_det=5,
+                iou=0.45,
+                verbose=False,
+            )[0]
         annotated_bgr, detections = draw_detection_overlay(image_bgr, result)
         if battle_mode:
             annotated_bgr = draw_game_hud(annotated_bgr, detections)
