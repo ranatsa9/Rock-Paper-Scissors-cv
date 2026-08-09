@@ -1,3 +1,5 @@
 ultralytics==8.4.116
-gradio>=5.0,<7
+streamlit>=1.40,<2
+streamlit-webrtc>=0.64,<1
 opencv-python>=4.8
+av>=12,<17

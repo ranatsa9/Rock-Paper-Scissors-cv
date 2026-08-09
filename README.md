@@ -1,81 +1,51 @@
-# Live Rock-Paper-Scissors Object Detection
+# RPS Vision Arena — Streamlit Edition
 
-An object-detection project that recognizes three hand-gesture classes:
+A professional glassmorphism Streamlit interface for live rock-paper-scissors
+detection using the team's three-class YOLO model. It includes three large
+modes: continuous live detection, a camera snapshot, and an uploaded image.
+Live mode also includes an optional two-player battle mode: the left hand is
+Player 1, the right hand is Player 2, and the winner appears on the video.
+The live camera is mirrored by default and uses 416-pixel inference for a
+better accuracy/speed balance on Apple Silicon.
+Fullscreen mode preserves the complete video frame and keeps game results
+above the browser's video controls.
 
-- `paper`
-- `rock`
-- `scissors`
+## Run on macOS
 
-The repository contains the trained model, the Colab training notebook, and a Gradio application for live webcam and uploaded-image detection.
+### Terminal method
 
-## Model results
+Open Terminal, change into this folder, and run:
 
-The included model is the team's higher-accuracy three-class model. The live
-camera uses 320-pixel inference for responsiveness, while uploaded images use
-640-pixel inference for improved accuracy.
-
-| Metric | Result |
-| --- | ---: |
-| mAP@50 | 96.0% |
-| mAP@50-95 | 76.3% |
-| Precision | 97.2% |
-| Recall | 94.3% |
-
-These reported validation results come from the training notebook associated
-with the included model. Real webcam performance depends on lighting, camera
-quality, background, distance, and whether those conditions appeared in the
-training data.
-
-## Repository structure
-
-```text
-.
-|-- app.py
-|-- dataset.yaml
-|-- requirements.txt
-|-- run_app.bat
-|-- model/
-|   `-- best.pt
-`-- notebooks/
-    `-- training_notebook.ipynb
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m streamlit run app.py
 ```
 
-## Run on Windows
+Later launches only need:
 
-1. Install Python 3.11 or 3.12 from [python.org](https://www.python.org/downloads/). During installation, enable **Add Python to PATH**.
-2. Download or clone this repository.
-3. Double-click `run_app.bat`.
-4. The first launch creates a virtual environment and downloads dependencies, so it can take several minutes.
-5. When the browser opens, allow camera access and select the **Live camera** tab.
-
-Later launches reuse the installed environment and start faster.
-
-## Run from a terminal
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe app.py
+```bash
+source .venv/bin/activate
+python -m streamlit run app.py
 ```
 
-Open the local URL shown in the terminal, normally `http://127.0.0.1:7860`.
+Open http://localhost:8501 if the browser does not open automatically.
 
-## Confidence threshold
+### Double-click method
 
-- Lower the threshold if the model misses gestures.
-- Raise it if the model produces incorrect detections.
-- Live camera starts at `0.40` to reduce weak false detections.
-- Uploaded images start at `0.25` to reduce missed gestures.
+Double-click `run_mac.command`. If macOS blocks it, right-click it, choose
+**Open**, and confirm. The first launch installs dependencies and takes longer.
 
-## Training and evaluation
+After the first setup, double-click `start_class.command` for a fast launch
+without reinstalling packages. Prepare the `.venv` before class because it is
+correctly excluded from Git and will not be downloaded with the repository.
 
-The included runnable model is stored at `model/best.pt`. The notebook documents
-the original four-class training workflow and is not required to run the app.
+## Controls
 
-The combined training dataset is not committed because it contains thousands of images and is too large for a normal GitHub repository. Keep the dataset in shared cloud storage and document its source separately.
+- Live confidence starts at 0.40.
+- Live quality 256 is fastest, 320 is balanced, and 416 favors accuracy.
+- Uploaded images use 640-pixel inference and start at 0.25 confidence.
 
-## Known limitation
-
-No model is perfectly accurate outside its training conditions. If rock and
-paper are still confused, retrain with balanced examples captured using the
-same webcam, lighting, backgrounds, distances, and hand angles used in the app.
+The model is stored at `model/best.pt`. Retraining is not required to run the app.
