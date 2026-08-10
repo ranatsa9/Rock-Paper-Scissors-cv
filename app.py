@@ -274,11 +274,10 @@ def draw_corner_box(image, box, color, length=28, thickness=4):
     cv2.line(image, (x2, y2), (x2, y2 - length), color, thickness)
 
 
-def draw_detection_overlay(image_bgr, result, show_confidence=True):
-    """Draw labels inside the frame so they never disappear off an edge."""
+def draw_detections(image_bgr, detections, show_confidence=True):
+    """Draw already-extracted detections inside the frame."""
     output = image_bgr.copy()
     height, width = output.shape[:2]
-    detections = extract_detections(result)
 
     for detection in detections:
         x1, y1, x2, y2 = detection["box"]
@@ -320,6 +319,44 @@ def draw_detection_overlay(image_bgr, result, show_confidence=True):
         )
 
     return output, detections
+
+
+def draw_detection_overlay(image_bgr, result, show_confidence=True):
+    """Extract and draw the detections returned by YOLO."""
+    return draw_detections(image_bgr, extract_detections(result), show_confidence)
+
+
+def vote_for_round(sample_groups, frame_width, two_players, minimum_votes=3):
+    """Choose only gestures supported by a majority of the sampled frames."""
+    slots = ("left", "right") if two_players else ("single",)
+    candidates = {slot: [] for slot in slots}
+
+    for detections in sample_groups:
+        valid = [item for item in detections if item["name"] in CLASS_COLORS]
+        if two_players:
+            sides = {
+                "left": [item for item in valid if item["center_x"] < frame_width / 2],
+                "right": [item for item in valid if item["center_x"] >= frame_width / 2],
+            }
+            for slot in slots:
+                if sides[slot]:
+                    candidates[slot].append(max(sides[slot], key=lambda item: item["confidence"]))
+        elif valid:
+            candidates["single"].append(max(valid, key=lambda item: item["confidence"]))
+
+    winners = []
+    for slot in slots:
+        votes = {}
+        for item in candidates[slot]:
+            votes[item["name"]] = votes.get(item["name"], 0) + 1
+        if not votes:
+            continue
+        winning_name, vote_count = max(votes.items(), key=lambda pair: pair[1])
+        if vote_count < minimum_votes:
+            continue
+        matching = [item for item in candidates[slot] if item["name"] == winning_name]
+        winners.append(max(matching, key=lambda item: item["confidence"]))
+    return winners
 
 
 def round_winner(player_one, player_two):
@@ -467,6 +504,8 @@ def get_round_state():
         "status": "idle",
         "detect_at": 0.0,
         "result_frame": None,
+        "samples": [],
+        "last_frame": None,
     }
 
 
@@ -559,7 +598,7 @@ def show_still_result(rgb_image, confidence):
 
 with live_tab:
     st.subheader("Three-second game round")
-    st.caption("ROUND MODE v1 • One detection after the 3-second countdown")
+    st.caption("ROUND MODE v2.1 • Battle-friendly five-frame voting")
     st.write("Start the camera, press **START ROUND**, then reveal your gesture when the countdown reaches **SHOW!**")
     if battle_mode:
         st.markdown(
@@ -572,6 +611,8 @@ with live_tab:
             ROUND_STATE["status"] = "countdown"
             ROUND_STATE["detect_at"] = time.monotonic() + 3.0
             ROUND_STATE["result_frame"] = None
+            ROUND_STATE["samples"] = []
+            ROUND_STATE["last_frame"] = None
 
     def video_frame_callback(frame):
         image_bgr = frame.to_ndarray(format="bgr24")
@@ -596,20 +637,25 @@ with live_tab:
             countdown_frame = draw_countdown(image_bgr, countdown_number)
             return av.VideoFrame.from_ndarray(countdown_frame, format="bgr24")
 
-        # The countdown has finished: run YOLO once on this final frame.
+        # The countdown has finished: sample five frames and accept a gesture
+        # only when at least three frames agree.
         with ROUND_STATE["lock"]:
-            if ROUND_STATE["status"] != "countdown":
+            if ROUND_STATE["status"] == "countdown":
+                ROUND_STATE["status"] = "sampling"
+                ROUND_STATE["samples"] = []
+            elif ROUND_STATE["status"] != "sampling":
                 frozen_result = ROUND_STATE["result_frame"]
                 if frozen_result is not None:
                     return av.VideoFrame.from_ndarray(frozen_result, format="bgr24")
                 show_frame = draw_countdown(image_bgr, "SHOW!", (73, 208, 255))
                 return av.VideoFrame.from_ndarray(show_frame, format="bgr24")
-            ROUND_STATE["status"] = "detecting"
 
         with MODEL_LOCK:
             result = model.predict(
                 source=image_bgr,
-                conf=float(live_confidence),
+                # Battle voting can safely start from a lower threshold because
+                # a move must still repeat across multiple sampled frames.
+                conf=float(min(live_confidence, 0.20) if battle_mode else live_confidence),
                 imgsz=int(live_size),
                 device=device,
                 max_det=5,
@@ -617,11 +663,27 @@ with live_tab:
                 verbose=False,
             )[0]
 
-        annotated_bgr, detections = draw_detection_overlay(image_bgr, result, show_confidence=False)
+        with ROUND_STATE["lock"]:
+            ROUND_STATE["samples"].append(extract_detections(result))
+            ROUND_STATE["last_frame"] = image_bgr.copy()
+            sample_count = len(ROUND_STATE["samples"])
+            samples = list(ROUND_STATE["samples"])
+
+        if sample_count < 5:
+            sampling_frame = draw_countdown(image_bgr, f"HOLD STILL  {sample_count}/5", (73, 208, 255))
+            return av.VideoFrame.from_ndarray(sampling_frame, format="bgr24")
+
+        voted_detections = vote_for_round(
+            samples,
+            image_bgr.shape[1],
+            battle_mode,
+            minimum_votes=2 if battle_mode else 3,
+        )
+        annotated_bgr, _ = draw_detections(image_bgr, voted_detections, show_confidence=False)
         if battle_mode:
-            annotated_bgr = draw_game_hud(annotated_bgr, detections)
-        if not detections:
-            annotated_bgr = draw_countdown(image_bgr, "NO GESTURE", (126, 66, 239))
+            annotated_bgr = draw_game_hud(annotated_bgr, voted_detections)
+        elif not voted_detections:
+            annotated_bgr = draw_countdown(image_bgr, "UNCLEAR - TRY AGAIN", (126, 66, 239))
 
         with ROUND_STATE["lock"]:
             ROUND_STATE["result_frame"] = annotated_bgr.copy()
@@ -650,7 +712,7 @@ with live_tab:
         },
         async_processing=True,
     )
-    st.info("The AI runs once after each three-second countdown. Press START ROUND again to play another round.")
+    st.info("After the countdown, the AI checks five quick frames. Battle mode accepts 2 matching frames; single-player mode requires 3. Press START ROUND again to play another round.")
 
 with camera_tab:
     st.subheader("Take a photo and detect your move")
