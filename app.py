@@ -225,6 +225,14 @@ CLASS_COLORS = {
     "scissors": (235, 221, 77),
 }
 
+# Some exported models store the class names as "0", "1", and "2".
+# Translate those IDs into the labels used by this dataset.
+CLASS_ID_NAMES = {
+    0: "paper",
+    1: "rock",
+    2: "scissors",
+}
+
 
 def extract_detections(result):
     """Convert YOLO boxes into plain data for custom drawing and game logic."""
@@ -239,7 +247,9 @@ def extract_detections(result):
         result.boxes.conf.cpu().numpy(),
     ):
         x1, y1, x2, y2 = (int(value) for value in xyxy)
-        class_name = str(names[int(class_id)]).lower()
+        class_index = int(class_id)
+        raw_name = str(names[class_index]).strip().lower()
+        class_name = raw_name if raw_name in CLASS_COLORS else CLASS_ID_NAMES.get(class_index, raw_name)
         detections.append(
             {
                 "box": (x1, y1, x2, y2),
@@ -549,6 +559,7 @@ def show_still_result(rgb_image, confidence):
 
 with live_tab:
     st.subheader("Three-second game round")
+    st.caption("ROUND MODE v1 • One detection after the 3-second countdown")
     st.write("Start the camera, press **START ROUND**, then reveal your gesture when the countdown reaches **SHOW!**")
     if battle_mode:
         st.markdown(
