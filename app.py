@@ -1,5 +1,6 @@
 from pathlib import Path
 from threading import Lock
+import time
 
 import av
 import cv2
@@ -263,7 +264,7 @@ def draw_corner_box(image, box, color, length=28, thickness=4):
     cv2.line(image, (x2, y2), (x2, y2 - length), color, thickness)
 
 
-def draw_detection_overlay(image_bgr, result):
+def draw_detection_overlay(image_bgr, result, show_confidence=True):
     """Draw labels inside the frame so they never disappear off an edge."""
     output = image_bgr.copy()
     height, width = output.shape[:2]
@@ -276,7 +277,9 @@ def draw_detection_overlay(image_bgr, result):
         color = CLASS_COLORS.get(detection["name"], (235, 221, 77))
         draw_corner_box(output, (x1, y1, x2, y2), color)
 
-        label = f'{detection["name"].title()}  {detection["confidence"]:.0%}'
+        label = detection["name"].title()
+        if show_confidence:
+            label += f'  {detection["confidence"]:.0%}'
         font = cv2.FONT_HERSHEY_DUPLEX
         font_scale = max(0.58, min(0.88, width / 1100))
         text_size, _ = cv2.getTextSize(label, font, font_scale, 2)
@@ -382,6 +385,83 @@ def draw_game_hud(image_bgr, detections):
     cv2.putText(image_bgr, result_text, ((width - result_size[0]) // 2, hud_top + hud_height // 2 + 10), font, result_scale, result_color, 2, cv2.LINE_AA)
     return image_bgr
 
+
+def motion_score(previous_gray, current_bgr):
+    """Estimate whole-frame motion cheaply before running the YOLO model."""
+    small = cv2.resize(current_bgr, (160, 90), interpolation=cv2.INTER_AREA)
+    current_gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    current_gray = cv2.GaussianBlur(current_gray, (7, 7), 0)
+    if previous_gray is None:
+        return 255.0, current_gray
+    difference = cv2.absdiff(previous_gray, current_gray)
+    return float(np.mean(difference)), current_gray
+
+
+def draw_hold_prompt(image_bgr, stable_frames, required_frames):
+    """Tell players to hold still while the final gesture is being locked."""
+    output = image_bgr.copy()
+    height, width = output.shape[:2]
+    progress = min(1.0, stable_frames / required_frames)
+    box_width = min(width - 40, 520)
+    box_height = 68
+    left = (width - box_width) // 2
+    top = 24
+
+    overlay = output.copy()
+    cv2.rectangle(overlay, (left, top), (left + box_width, top + box_height), (8, 16, 38), -1)
+    cv2.addWeighted(overlay, 0.88, output, 0.12, 0, output)
+    message = "HOLD YOUR MOVE" if stable_frames == 0 else "LOCKING GESTURE..."
+    font = cv2.FONT_HERSHEY_DUPLEX
+    text_size, _ = cv2.getTextSize(message, font, 0.72, 2)
+    cv2.putText(
+        output,
+        message,
+        ((width - text_size[0]) // 2, top + 31),
+        font,
+        0.72,
+        (255, 255, 255),
+        2,
+        cv2.LINE_AA,
+    )
+    bar_left = left + 22
+    bar_right = left + box_width - 22
+    bar_top = top + 45
+    cv2.rectangle(output, (bar_left, bar_top), (bar_right, bar_top + 8), (48, 58, 87), -1)
+    cv2.rectangle(output, (bar_left, bar_top), (bar_left + int((bar_right - bar_left) * progress), bar_top + 8), (235, 221, 77), -1)
+    return output
+
+
+def draw_countdown(image_bgr, text, accent=(235, 221, 77)):
+    """Draw a large, readable round prompt over the live camera."""
+    output = image_bgr.copy()
+    height, width = output.shape[:2]
+    overlay = output.copy()
+    cv2.rectangle(overlay, (0, 0), (width, height), (8, 16, 38), -1)
+    cv2.addWeighted(overlay, 0.44, output, 0.56, 0, output)
+
+    font = cv2.FONT_HERSHEY_DUPLEX
+    scale = max(0.9, min(4.0, width / max(280, len(text) * 32)))
+    thickness = max(3, int(scale * 2))
+    text_size, _ = cv2.getTextSize(text, font, scale, thickness)
+    x = max(16, (width - text_size[0]) // 2)
+    y = (height + text_size[1]) // 2
+    cv2.putText(output, text, (x, y), font, scale, (8, 16, 38), thickness + 8, cv2.LINE_AA)
+    cv2.putText(output, text, (x, y), font, scale, accent, thickness, cv2.LINE_AA)
+    return output
+
+
+@st.cache_resource
+def get_round_state():
+    return {
+        "lock": Lock(),
+        "status": "idle",
+        "detect_at": 0.0,
+        "result_frame": None,
+    }
+
+
+ROUND_STATE = get_round_state()
+
 with st.sidebar:
     st.title("🎮 Arena controls")
     live_confidence = st.slider(
@@ -395,7 +475,7 @@ with st.sidebar:
     live_size = st.select_slider(
         "Live quality",
         options=[256, 320, 416],
-        value=416,
+        value=320,
         help="256 is fastest. 416 can be more accurate but slower.",
     )
     mirror_camera = st.toggle(
@@ -468,18 +548,53 @@ def show_still_result(rgb_image, confidence):
         st.warning("No confident gesture was found. Try lowering confidence slightly or retaking the photo.")
 
 with live_tab:
-    st.subheader("Live camera detection")
-    st.write("Press **START**, allow camera access, then hold one gesture inside the frame.")
+    st.subheader("Three-second game round")
+    st.write("Start the camera, press **START ROUND**, then reveal your gesture when the countdown reaches **SHOW!**")
     if battle_mode:
         st.markdown(
             '<div class="battle-guide"><span class="p1">● PLAYER 1 — LEFT</span><span class="vs">VS</span><span class="p2">RIGHT — PLAYER 2 ●</span></div>',
             unsafe_allow_html=True,
         )
 
+    if st.button("▶ START ROUND", type="primary", use_container_width=True):
+        with ROUND_STATE["lock"]:
+            ROUND_STATE["status"] = "countdown"
+            ROUND_STATE["detect_at"] = time.monotonic() + 3.0
+            ROUND_STATE["result_frame"] = None
+
     def video_frame_callback(frame):
         image_bgr = frame.to_ndarray(format="bgr24")
         if mirror_camera:
             image_bgr = cv2.flip(image_bgr, 1)
+
+        with ROUND_STATE["lock"]:
+            status = ROUND_STATE["status"]
+            detect_at = ROUND_STATE["detect_at"]
+            frozen_result = ROUND_STATE["result_frame"]
+
+        if status == "idle":
+            waiting = draw_countdown(image_bgr, "PRESS START ROUND", (235, 221, 77))
+            return av.VideoFrame.from_ndarray(waiting, format="bgr24")
+
+        if status == "result" and frozen_result is not None:
+            return av.VideoFrame.from_ndarray(frozen_result, format="bgr24")
+
+        remaining = detect_at - time.monotonic()
+        if remaining > 0:
+            countdown_number = str(max(1, int(np.ceil(remaining))))
+            countdown_frame = draw_countdown(image_bgr, countdown_number)
+            return av.VideoFrame.from_ndarray(countdown_frame, format="bgr24")
+
+        # The countdown has finished: run YOLO once on this final frame.
+        with ROUND_STATE["lock"]:
+            if ROUND_STATE["status"] != "countdown":
+                frozen_result = ROUND_STATE["result_frame"]
+                if frozen_result is not None:
+                    return av.VideoFrame.from_ndarray(frozen_result, format="bgr24")
+                show_frame = draw_countdown(image_bgr, "SHOW!", (73, 208, 255))
+                return av.VideoFrame.from_ndarray(show_frame, format="bgr24")
+            ROUND_STATE["status"] = "detecting"
+
         with MODEL_LOCK:
             result = model.predict(
                 source=image_bgr,
@@ -490,9 +605,16 @@ with live_tab:
                 iou=0.45,
                 verbose=False,
             )[0]
-        annotated_bgr, detections = draw_detection_overlay(image_bgr, result)
+
+        annotated_bgr, detections = draw_detection_overlay(image_bgr, result, show_confidence=False)
         if battle_mode:
             annotated_bgr = draw_game_hud(annotated_bgr, detections)
+        if not detections:
+            annotated_bgr = draw_countdown(image_bgr, "NO GESTURE", (126, 66, 239))
+
+        with ROUND_STATE["lock"]:
+            ROUND_STATE["result_frame"] = annotated_bgr.copy()
+            ROUND_STATE["status"] = "result"
         return av.VideoFrame.from_ndarray(annotated_bgr, format="bgr24")
 
     webrtc_streamer(
@@ -517,7 +639,7 @@ with live_tab:
         },
         async_processing=True,
     )
-    st.info("If detection feels slow, choose 256 in Live quality. If it misses gestures, try 416.")
+    st.info("The AI runs once after each three-second countdown. Press START ROUND again to play another round.")
 
 with camera_tab:
     st.subheader("Take a photo and detect your move")
