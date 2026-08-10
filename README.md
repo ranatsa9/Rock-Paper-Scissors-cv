@@ -1,37 +1,58 @@
-# Rock Paper Scissors — RPS Vision Arena
+<div align="center">
 
-An interactive Rock–Paper–Scissors computer-vision game built with
-**Streamlit**, **WebRTC**, and a custom **YOLOv8** object-detection model.
+# 🎮 RPS Vision Arena
 
-Players can use a live webcam, take a photo, or upload an image. In two-player
-battle mode, the app identifies Player 1 on the left and Player 2 on the right,
-then announces the winner on the video.
+### Play with your hands. Let AI call the move.
 
-## Features
+**✊ Rock · ✋ Paper · ✌️ Scissors**
 
-- Live, mirrored webcam experience
-- Three-second `3–2–1` game countdown
-- Five-frame voting after the countdown to reduce predictions during movement
-- Two-player battle mode with automatic winner calculation
-- Separate camera-photo and image-upload modes
-- Adjustable detection confidence and inference quality
-- Custom glassmorphism interface with responsive fullscreen video
-- Local macOS, Windows, and Streamlit Community Cloud support
+![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-Live_App-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)
+![YOLOv8](https://img.shields.io/badge/YOLOv8-AI_Vision-00FFFF?style=for-the-badge)
+![OpenCV](https://img.shields.io/badge/OpenCV-Camera-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white)
 
-## How a live round works
+Turn your webcam into a colorful Rock–Paper–Scissors arena. Challenge a
+friend, strike a pose, and let computer vision decide who wins! 🏆
 
-1. Start the camera and allow browser camera access.
-2. Enable **Two-player battle mode** if two people are playing.
-3. Player 1 stands on the left and Player 2 stands on the right.
-4. Press **START ROUND**.
-5. Reveal and hold each gesture when the countdown reaches **SHOW!**
-6. The app checks five quick frames and uses repeated predictions to determine
-   the result.
+</div>
+
+Use the live webcam, snap a photo, or upload an image. In **Battle Mode**, the
+app recognizes Player 1 on the left and Player 2 on the right, reads both hand
+gestures, and announces the winner directly on the video.
+
+## ✨ What makes it fun?
+
+- 🪞 **Mirrored live camera** — move naturally, just like looking in a mirror
+- ⏱️ **3–2–1 countdown** — get ready, reveal your move, and hold it!
+- 🧠 **Five-frame AI voting** — helps avoid calling a move while you are moving
+- ⚔️ **Two-player Battle Mode** — automatic P1/P2 labels and winner calculation
+- 📸 **Three ways to play** — live camera, camera snapshot, or uploaded image
+- 🎛️ **Adjustable controls** — tune confidence and quality for your computer
+- 🫧 **Glassmorphism design** — colorful cards, glowing borders, and fullscreen play
+- ☁️ **Run anywhere** — macOS, Windows, or Streamlit Community Cloud
+
+## 🥊 The rules of the arena
+
+| Move | Beats | Why? |
+|---|---|---|
+| ✊ **Rock** | ✌️ Scissors | Rock crushes scissors |
+| ✋ **Paper** | ✊ Rock | Paper covers rock |
+| ✌️ **Scissors** | ✋ Paper | Scissors cut paper |
+
+## 🚀 Ready… set… SHOW!
+
+1. 📹 Start the camera and allow browser camera access.
+2. ⚔️ Enable **Two-player Battle Mode** when challenging a friend.
+3. 🩷 Player 1 takes the left side; 🩵 Player 2 takes the right.
+4. ▶️ Press **START ROUND**.
+5. ⏳ Wait for `3… 2… 1…`
+6. 🙌 Reveal and hold your gesture when the screen says **SHOW!**
+7. 🏆 Let the AI read the moves and crown the winner.
 
 If a gesture is not detected consistently, the app asks the players to try the
 round again instead of intentionally forcing a low-confidence result.
 
-## Project structure
+## 🗂️ Behind the arena
 
 ```text
 Rock-Paper-Scissors-cv/
@@ -49,9 +70,9 @@ Rock-Paper-Scissors-cv/
 └── README.md
 ```
 
-## Run locally
+## 💻 Launch the game locally
 
-### macOS
+### 🍎 macOS
 
 Open Terminal inside the project directory:
 
@@ -73,7 +94,7 @@ python -m streamlit run app.py
 You can also double-click `run_mac.command`. After the first successful setup,
 use `start_class.command` for a faster classroom launch.
 
-### Windows / VS Code
+### 🪟 Windows / VS Code
 
 Open the repository folder in VS Code, select **Terminal → New Terminal**, and
 run:
@@ -88,7 +109,7 @@ python -m streamlit run app.py
 
 Open `http://localhost:8501` if the browser does not open automatically.
 
-## Deploy on Streamlit Community Cloud
+## ☁️ Put the arena online
 
 1. Push all project files, including `model/best.pt`, to GitHub.
 2. Visit [Streamlit Community Cloud](https://share.streamlit.io/).
@@ -99,7 +120,7 @@ Open `http://localhost:8501` if the browser does not open automatically.
 `packages.txt` provides the Linux libraries required by OpenCV. The WebRTC
 configuration includes a public STUN server for remote camera connections.
 
-## Controls and performance
+## 🎛️ Arena controls
 
 - **Confidence:** Raising it rejects more uncertain detections; lowering it
   detects more hands but may produce more incorrect predictions.
@@ -113,7 +134,7 @@ configuration includes a public STUN server for remote camera connections.
 For the clearest results, use even lighting, keep both hands fully inside the
 frame, leave space between players, and hold gestures facing the camera.
 
-## Model
+## 🧠 Meet the AI referee
 
 The YOLO model recognizes these classes:
 
@@ -137,7 +158,7 @@ backgrounds, and movement/unknown examples.
 After retraining, replace `model/best.pt` with the new best weights and restart
 the application.
 
-## Technology
+## 🛠️ Built with
 
 - Python
 - Streamlit
@@ -146,9 +167,23 @@ the application.
 - OpenCV
 - PyTorch
 
-## Notes
+## 💡 Tips for a championship-level round
 
-- Camera processing occurs through the browser and Streamlit WebRTC session.
+- Keep both hands fully visible and away from the camera edges.
+- Face gestures toward the camera and hold them still after **SHOW!**
+- Use bright, even lighting and leave space between both players.
 - Local performance is normally faster than free cloud hosting.
-- A CUDA-capable computer requires a CUDA-enabled PyTorch installation to use
-  an NVIDIA GPU. Apple Silicon uses PyTorch MPS when available.
+- A CUDA-capable computer requires CUDA-enabled PyTorch to use an NVIDIA GPU.
+  Apple Silicon uses PyTorch MPS when available.
+
+---
+
+<div align="center">
+
+### Ready to enter the arena?
+
+## ✊ ✋ ✌️
+
+**Start the camera. Challenge a friend. May the best hand win!**
+
+</div>
